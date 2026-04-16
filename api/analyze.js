@@ -1,5 +1,6 @@
 const Anthropic = require('@anthropic-ai/sdk')
-const yahooFinance = require('yahoo-finance2').default
+const { YahooFinance } = require('yahoo-finance2')
+const yahooFinance = new YahooFinance()
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
