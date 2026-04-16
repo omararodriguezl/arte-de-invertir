@@ -10,15 +10,19 @@ async function fmpFetch(path: string) {
   return res.json()
 }
 
+async function fmpFetchSafe(path: string) {
+  try { return await fmpFetch(path) } catch { return [] }
+}
+
 export async function fetchFinancialData(ticker: string): Promise<FinancialData> {
   const symbol = ticker.toUpperCase().trim()
 
   const [quote, profile, income, ratiosTTM, metricsTTM] = await Promise.all([
     fmpFetch(`/quote/${symbol}`),
-    fmpFetch(`/profile/${symbol}`),
-    fmpFetch(`/income-statement/${symbol}?limit=5`),
-    fmpFetch(`/ratios-ttm/${symbol}`),
-    fmpFetch(`/key-metrics-ttm/${symbol}`),
+    fmpFetchSafe(`/profile/${symbol}`),
+    fmpFetchSafe(`/income-statement/${symbol}?limit=5`),
+    fmpFetchSafe(`/ratios-ttm/${symbol}`),
+    fmpFetchSafe(`/key-metrics-ttm/${symbol}`),
   ])
 
   if (!quote || !Array.isArray(quote) || quote.length === 0) {
