@@ -1,0 +1,86 @@
+{
+  "app": {
+    "title": "El Arte de Invertir",
+    "subtitle": "Análisis de valor según la metodología de Alejandro Estebaranz"
+  },
+  "home": {
+    "tagline": "Invierte con inteligencia. Invierte con criterio.",
+    "placeholder": "Ingresa un ticker (ej. AAPL, MSFT, NVDA)",
+    "analyze": "Analizar",
+    "disclaimer": "Este análisis es solo informativo y no constituye asesoramiento financiero.",
+    "exampleLabel": "Ejemplos:",
+    "poweredBy": "Impulsado por IA con datos en tiempo real"
+  },
+  "loading": {
+    "title": "Analizando empresa...",
+    "messages": [
+      "Obteniendo datos financieros reales...",
+      "Clasificando tipo de acción (cíclica/estable)...",
+      "Analizando BPA — el indicador clave a 10 años...",
+      "Identificando ventaja competitiva (moat)...",
+      "Evaluando calidad directiva y skin in the game...",
+      "Calculando valoración relativa al tipo de acción...",
+      "Aplicando metodología de Estebaranz...",
+      "Generando recomendación final..."
+    ]
+  },
+  "results": {
+    "score": "Puntuación Total",
+    "outOf": "de 100",
+    "recommendation": "Recomendación",
+    "criteria": "Los 6 Criterios de Estebaranz",
+    "epsHistory": "Historial BPA — Variable Clave a Largo Plazo",
+    "risks": "Riesgos Principales",
+    "justification": "Justificación según El Arte de Invertir",
+    "executiveSummary": "Resumen Ejecutivo",
+    "download": "Descargar Reporte PDF",
+    "back": "Analizar otra empresa",
+    "price": "Precio Actual",
+    "per": "PER",
+    "roe": "ROE",
+    "sector": "Sector",
+    "analysisDate": "Fecha de análisis",
+    "criteriaScore": "Puntuación",
+    "of": "de",
+    "positiveEps": "BPA positivo",
+    "negativeEps": "BPA negativo",
+    "stockType": "Tipo de Acción",
+    "stockTypes": {
+      "ESTABLE_ALTO_CRECIMIENTO": "Estable + Alto Crecimiento",
+      "ESTABLE_BAJO_CRECIMIENTO": "Estable + Bajo Crecimiento",
+      "CICLICA_ALTO_CRECIMIENTO": "Cíclica + Alto Crecimiento",
+      "CICLICA_BAJO_CRECIMIENTO": "Cíclica + Bajo Crecimiento"
+    },
+    "perBenchmark": "Rango PER de referencia"
+  },
+  "recommendation": {
+    "BUY": "COMPRAR",
+    "WAIT": "ESPERAR",
+    "AVOID": "EVITAR",
+    "buyDesc": "Empresa de calidad, sector bueno, BPA creciente, PER atractivo y directiva alineada.",
+    "waitDesc": "Buenos fundamentos pero PER elevado o ciclo desfavorable. Esperar mejor momento de entrada.",
+    "avoidDesc": "Sector malo, BPA errático, deuda alta, directiva dudosa o burbuja en valoración."
+  },
+  "error": {
+    "invalidTicker": "Ticker no encontrado. Verifica que sea un símbolo válido de EE.UU.",
+    "fmpError": "Error al obtener datos financieros. Intenta de nuevo.",
+    "claudeError": "Error al generar el análisis. Intenta de nuevo.",
+    "networkError": "Error de conexión. Verifica tu internet.",
+    "retry": "Intentar de nuevo",
+    "backHome": "Volver al inicio",
+    "genericError": "Ocurrió un error inesperado."
+  },
+  "pdf": {
+    "title": "Reporte de Análisis de Inversión",
+    "generatedBy": "Generado por El Arte de Invertir",
+    "date": "Fecha",
+    "page": "Página",
+    "disclaimer": "Este análisis es solo informativo y no constituye asesoramiento financiero. / This analysis is for informational purposes only and does not constitute financial advice.",
+    "writtenReport": "Reporte Escrito",
+    "generating": "Generando PDF..."
+  },
+  "lang": {
+    "current": "ES",
+    "other": "EN"
+  }
+}
