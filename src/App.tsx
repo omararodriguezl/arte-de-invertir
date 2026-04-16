@@ -41,7 +41,7 @@ export default function App() {
 
       if (msg === 'INVALID_TICKER' || msg.includes('not found')) {
         setErrorKey('invalidTicker')
-      } else if (msg.includes('FMP') || msg.includes('fetch')) {
+      } else if (msg === 'FMP_KEY_MISSING' || msg.includes('FMP') || msg.includes('fetch')) {
         setErrorKey('fmpError')
       } else if (msg.includes('Claude') || msg.includes('analyze') || msg.includes('API')) {
         setErrorKey('claudeError')

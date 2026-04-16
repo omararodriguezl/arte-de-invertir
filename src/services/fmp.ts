@@ -1,7 +1,7 @@
 import { FinancialData, EPSPoint } from '../types'
 
 const BASE = 'https://financialmodelingprep.com/api/v3'
-const KEY = import.meta.env.VITE_FMP_API_KEY
+const KEY = import.meta.env.VITE_FMP_API_KEY as string | undefined
 
 async function fmpFetch(path: string) {
   const sep = path.includes('?') ? '&' : '?'
@@ -15,6 +15,7 @@ async function fmpFetchSafe(path: string) {
 }
 
 export async function fetchFinancialData(ticker: string): Promise<FinancialData> {
+  if (!KEY) throw new Error('FMP_KEY_MISSING')
   const symbol = ticker.toUpperCase().trim()
 
   const [quote, profile, income, ratiosTTM, metricsTTM] = await Promise.all([
