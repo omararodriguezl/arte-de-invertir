@@ -1,13 +1,13 @@
 import { FinancialData, Analysis } from '../types'
 
 export async function analyzeWithClaude(
-  financialData: FinancialData,
+  ticker: string,
   language: string
-): Promise<Analysis> {
+): Promise<{ financialData: FinancialData; analysis: Analysis }> {
   const res = await fetch('/api/analyze', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ financialData, language }),
+    body: JSON.stringify({ ticker, language }),
   })
 
   if (!res.ok) {
@@ -16,5 +16,5 @@ export async function analyzeWithClaude(
   }
 
   const data = await res.json()
-  return data.analysis as Analysis
+  return { financialData: data.financialData, analysis: data.analysis }
 }

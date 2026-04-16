@@ -4,7 +4,6 @@ import { AppState, FinancialData, Analysis } from './types'
 import HomeScreen from './components/HomeScreen'
 import LoadingScreen from './components/LoadingScreen'
 import ResultsScreen from './components/ResultsScreen'
-import { fetchFinancialData } from './services/fmp'
 import { analyzeWithClaude } from './services/claude'
 
 type ErrorType = 'invalidTicker' | 'fmpError' | 'claudeError' | 'networkError' | 'genericError'
@@ -30,10 +29,8 @@ export default function App() {
     setAnalysis(null)
 
     try {
-      const data = await fetchFinancialData(ticker)
+      const { financialData: data, analysis: result } = await analyzeWithClaude(ticker, i18n.language)
       setFinancialData(data)
-
-      const result = await analyzeWithClaude(data, i18n.language)
       setAnalysis(result)
       setAppState('results')
     } catch (err: unknown) {

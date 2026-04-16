@@ -2,18 +2,95 @@ const Anthropic = require('@anthropic-ai/sdk')
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
+// ─── YAHOO FINANCE DATA FETCHER ────────────────────────────────────────────
+
+async function fetchYahooData(symbol) {
+  const modules = [
+    'price',
+    'assetProfile',
+    'financialData',
+    'defaultKeyStatistics',
+    'incomeStatementHistory',
+  ].join(',')
+
+  const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${symbol}?modules=${modules}`
+
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': 'application/json',
+      'Accept-Language': 'en-US,en;q=0.9',
+    },
+  })
+
+  if (!res.ok) {
+    if (res.status === 404) throw new Error('INVALID_TICKER')
+    throw new Error(`Yahoo error ${res.status}`)
+  }
+
+  const json = await res.json()
+
+  if (json.quoteSummary?.error) {
+    throw new Error('INVALID_TICKER')
+  }
+
+  const result = json.quoteSummary?.result?.[0]
+  if (!result) throw new Error('INVALID_TICKER')
+
+  const price = result.price || {}
+  const profile = result.assetProfile || {}
+  const financial = result.financialData || {}
+  const keyStats = result.defaultKeyStatistics || {}
+  const incomeHistory = result.incomeStatementHistory?.incomeStatementHistory || []
+
+  const currentPrice = price.regularMarketPrice?.raw ?? 0
+  const companyName = price.longName || price.shortName || symbol
+  const sector = profile.sector || 'N/A'
+  const per = price.trailingPE?.raw ?? 0
+  const roe = (financial.returnOnEquity?.raw ?? 0) * 100
+  const netMargin = (financial.profitMargins?.raw ?? 0) * 100
+
+  const sharesOutstanding = keyStats.sharesOutstanding?.raw ?? 1
+  const freeCashFlowTotal = financial.freeCashflow?.raw ?? 0
+  const freeCashFlow = freeCashFlowTotal / sharesOutstanding
+
+  const totalDebt = financial.totalDebt?.raw ?? 0
+  const ebitda = financial.ebitda?.raw ?? 1
+  const debtToEbitda = ebitda !== 0 ? totalDebt / ebitda : 0
+
+  const eps = incomeHistory
+    .slice(0, 5)
+    .map(stmt => ({
+      year: new Date(stmt.endDate?.fmt || stmt.endDate?.raw * 1000).getFullYear(),
+      value: stmt.basicEps?.raw ?? 0,
+    }))
+    .reverse()
+
+  return {
+    ticker: symbol,
+    companyName,
+    sector,
+    currentPrice,
+    per,
+    eps,
+    roe,
+    debtToEbitda,
+    freeCashFlow,
+    netMargin,
+  }
+}
+
+// ─── CLAUDE PROMPT ─────────────────────────────────────────────────────────
+
 function buildPrompt(financialData) {
   const { ticker, companyName, sector, currentPrice, per, eps, roe, debtToEbitda, freeCashFlow, netMargin } = financialData
 
   const epsText = eps.map(e => `${e.year}: $${e.value.toFixed(2)}`).join(', ')
 
-  // Calculate EPS trend data for the prompt
   const epsValues = eps.map(e => e.value).filter(v => !isNaN(v))
   const epsGrowthNote = epsValues.length >= 2
     ? `Trend: from $${epsValues[epsValues.length - 1].toFixed(2)} to $${epsValues[0].toFixed(2)} (most recent first)`
     : ''
-  const hasNegativeEps = epsValues.some(v => v < 0)
-  const epsConsistent = epsValues.length >= 3 && !hasNegativeEps && epsValues.every((v, i) => i === 0 || v <= epsValues[i - 1])
 
   return `You are an expert value investor. Your analysis framework comes EXCLUSIVELY from the book "El Arte de Invertir" by Alejandro Estebaranz (founder of True Value Investments). Apply his exact methodology as described below — do not deviate.
 
@@ -77,7 +154,7 @@ BAD SECTORS (cyclical, high competition, no durable advantage):
 Mining, oil & gas, banking, insurance, transportation (airlines/maritime/trucking), construction, automotive, semiconductors, chemicals, discretionary consumer goods (furniture, appliances)
 
 ## STEP 6 — MANAGEMENT QUALITY (Estebaranz Chapters 5 & 8)
-POSITIVE signals: Management owns significant shares (skin in the game), base salary moderate/symbolic (wealth comes from shares), simple IR website (not spending on PR), aggressive buybacks when stock is cheap, track record of good decisions
+POSITIVE signals: Management owns significant shares (skin in the game), base salary moderate/symbolic, aggressive buybacks when stock is cheap, track record of good decisions
 NEGATIVE signals: High CEO turnover, growth promises without results, systematic shareholder dilution, very high salaries uncorrelated with results
 
 ═══════════════════════════════════════════
@@ -116,26 +193,13 @@ SCORING RUBRIC (total: 100 pts)
 ### CRITERION 4 — Valoración PER / PER Valuation (0-20 pts)
 Apply PER benchmarks RELATIVE to the stock type classified in Step 2:
 For ESTABLE ALTO CRECIMIENTO (benchmark 20x-35x):
-  - PER < 20 → 20 pts (very cheap for this type)
-  - PER 20-28 → 16 pts (fair)
-  - PER 28-35 → 12 pts (slightly expensive but within range)
-  - PER 35-45 → 6 pts (expensive)
-  - PER > 45 → 2 pts (very expensive)
+  - PER < 20 → 20 pts | PER 20-28 → 16 pts | PER 28-35 → 12 pts | PER 35-45 → 6 pts | PER > 45 → 2 pts
 For ESTABLE BAJO CRECIMIENTO (benchmark 15x-25x):
-  - PER < 15 → 20 pts
-  - PER 15-20 → 16 pts
-  - PER 20-25 → 12 pts
-  - PER 25-30 → 6 pts
-  - PER > 30 → 2 pts
+  - PER < 15 → 20 pts | PER 15-20 → 16 pts | PER 20-25 → 12 pts | PER 25-30 → 6 pts | PER > 30 → 2 pts
 For CÍCLICA ALTO CRECIMIENTO (benchmark 10x-15x):
-  - PER < 10 → 20 pts
-  - PER 10-15 → 14 pts
-  - PER 15-20 → 8 pts
-  - PER > 20 → 3 pts
+  - PER < 10 → 20 pts | PER 10-15 → 14 pts | PER 15-20 → 8 pts | PER > 20 → 3 pts
 For CÍCLICA BAJO CRECIMIENTO (benchmark 5x-10x):
-  - PER < 8 → 18 pts
-  - PER 8-12 → 10 pts
-  - PER > 12 → 3 pts
+  - PER < 8 → 18 pts | PER 8-12 → 10 pts | PER > 12 → 3 pts
 If PER is negative (losses): 0 pts
 
 ### CRITERION 5 — Salud Financiera / Financial Health (0-15 pts)
@@ -143,20 +207,20 @@ If PER is negative (losses): 0 pts
 12 pts: Debt/EBITDA 1-2x, FCF positive, solid margin > 10%
 8 pts: Moderate debt 2-3x, FCF positive, acceptable margin
 4 pts: High debt 3-5x OR negative FCF OR thin margins
-0-2 pts: Debt/EBITDA > 5x OR recurring losses (per Estebaranz: "debt amplifies problems, lethal in cyclicals")
+0-2 pts: Debt/EBITDA > 5x OR recurring losses
 
 ### CRITERION 6 — Calidad Directiva / Management Quality (0-10 pts)
 10 pts: Strong insider ownership, consistent buybacks, moderate salaries, proven capital allocation
 7 pts: Good signals overall but some uncertainty
-4 pts: Mixed signals — some positives, some negatives
+4 pts: Mixed signals
 0-2 pts: Red flags: dilution, high turnover, big salaries without results
 
 ═══════════════════════════════════════════
 RECOMMENDATION THRESHOLDS
 ═══════════════════════════════════════════
-75-100 → COMPRAR / BUY (empresa de calidad, sector bueno, BPA creciente, PER atractivo, directiva alineada)
-50-74  → ESPERAR / WAIT (buenos fundamentos pero PER elevado o ciclo desfavorable)
-0-49   → EVITAR / AVOID (sector malo, BPA errático, deuda alta, directiva dudosa, o burbuja en valoración)
+75-100 → COMPRAR / BUY
+50-74  → ESPERAR / WAIT
+0-49   → EVITAR / AVOID
 
 ═══════════════════════════════════════════
 OUTPUT FORMAT
@@ -167,69 +231,28 @@ Return ONLY a valid JSON object. NO markdown, NO backticks, NO text before or af
   "puntuacion_total": <number 0-100, sum of all criteria scores>,
   "tipo_accion": "<ESTABLE_ALTO_CRECIMIENTO|ESTABLE_BAJO_CRECIMIENTO|CICLICA_ALTO_CRECIMIENTO|CICLICA_BAJO_CRECIMIENTO>",
   "criterios": [
-    {
-      "nombre_es": "Crecimiento BPA",
-      "nombre_en": "EPS Growth",
-      "puntuacion": <0-20>,
-      "maximo": 20,
-      "descripcion_es": "<2-3 sentences in Spanish explaining score — cite specific EPS numbers and growth rate>",
-      "descripcion_en": "<2-3 sentences in English explaining score — cite specific EPS numbers and growth rate>"
-    },
-    {
-      "nombre_es": "Ventaja Competitiva",
-      "nombre_en": "Competitive Moat",
-      "puntuacion": <0-20>,
-      "maximo": 20,
-      "descripcion_es": "<2-3 sentences identifying specific moat types from Estebaranz's 7 categories>",
-      "descripcion_en": "<2-3 sentences identifying specific moat types from Estebaranz's 7 categories>"
-    },
-    {
-      "nombre_es": "Calidad del Sector",
-      "nombre_en": "Sector Quality",
-      "puntuacion": <0-15>,
-      "maximo": 15,
-      "descripcion_es": "<2-3 sentences explaining sector classification per Estebaranz: bueno/malo and why>",
-      "descripcion_en": "<2-3 sentences explaining sector classification per Estebaranz: good/bad and why>"
-    },
-    {
-      "nombre_es": "Valoración PER",
-      "nombre_en": "P/E Valuation",
-      "puntuacion": <0-20>,
-      "maximo": 20,
-      "descripcion_es": "<2-3 sentences: state stock type, PER benchmark range, and how current PER compares>",
-      "descripcion_en": "<2-3 sentences: state stock type, PER benchmark range, and how current PER compares>"
-    },
-    {
-      "nombre_es": "Salud Financiera",
-      "nombre_en": "Financial Health",
-      "puntuacion": <0-15>,
-      "maximo": 15,
-      "descripcion_es": "<2-3 sentences on debt, FCF, and margins with specific numbers>",
-      "descripcion_en": "<2-3 sentences on debt, FCF, and margins with specific numbers>"
-    },
-    {
-      "nombre_es": "Calidad Directiva",
-      "nombre_en": "Management Quality",
-      "puntuacion": <0-10>,
-      "maximo": 10,
-      "descripcion_es": "<2-3 sentences on insider ownership, buybacks, salaries, and capital allocation>",
-      "descripcion_en": "<2-3 sentences on insider ownership, buybacks, salaries, and capital allocation>"
-    }
+    { "nombre_es": "Crecimiento BPA", "nombre_en": "EPS Growth", "puntuacion": <0-20>, "maximo": 20, "descripcion_es": "<2-3 sentences in Spanish>", "descripcion_en": "<2-3 sentences in English>" },
+    { "nombre_es": "Ventaja Competitiva", "nombre_en": "Competitive Moat", "puntuacion": <0-20>, "maximo": 20, "descripcion_es": "<2-3 sentences>", "descripcion_en": "<2-3 sentences>" },
+    { "nombre_es": "Calidad del Sector", "nombre_en": "Sector Quality", "puntuacion": <0-15>, "maximo": 15, "descripcion_es": "<2-3 sentences>", "descripcion_en": "<2-3 sentences>" },
+    { "nombre_es": "Valoración PER", "nombre_en": "P/E Valuation", "puntuacion": <0-20>, "maximo": 20, "descripcion_es": "<2-3 sentences>", "descripcion_en": "<2-3 sentences>" },
+    { "nombre_es": "Salud Financiera", "nombre_en": "Financial Health", "puntuacion": <0-15>, "maximo": 15, "descripcion_es": "<2-3 sentences>", "descripcion_en": "<2-3 sentences>" },
+    { "nombre_es": "Calidad Directiva", "nombre_en": "Management Quality", "puntuacion": <0-10>, "maximo": 10, "descripcion_es": "<2-3 sentences>", "descripcion_en": "<2-3 sentences>" }
   ],
   "recomendacion": "<COMPRAR|ESPERAR|EVITAR>",
   "recomendacion_en": "<BUY|WAIT|AVOID>",
-  "resumen_ejecutivo_es": "<2-3 sentence executive summary in Spanish synthesizing the 4 Buffett pillars for this company>",
-  "resumen_ejecutivo_en": "<2-3 sentence executive summary in English synthesizing the 4 Buffett pillars for this company>",
-  "justificacion_es": "<1-2 paragraph justification in Spanish explaining why this recommendation, referencing Estebaranz's framework>",
-  "justificacion_en": "<1-2 paragraph justification in English explaining why this recommendation, referencing Estebaranz's framework>",
-  "riesgos_es": ["<specific risk 1>", "<specific risk 2>", "<specific risk 3>"],
-  "riesgos_en": ["<specific risk 1>", "<specific risk 2>", "<specific risk 3>"]
+  "resumen_ejecutivo_es": "<2-3 sentence executive summary in Spanish>",
+  "resumen_ejecutivo_en": "<2-3 sentence executive summary in English>",
+  "justificacion_es": "<1-2 paragraph justification in Spanish>",
+  "justificacion_en": "<1-2 paragraph justification in English>",
+  "riesgos_es": ["<risk 1>", "<risk 2>", "<risk 3>"],
+  "riesgos_en": ["<risk 1>", "<risk 2>", "<risk 3>"]
 }
 `
 }
 
+// ─── JSON EXTRACTOR ─────────────────────────────────────────────────────────
+
 function extractJSON(text) {
-  // Try to find a JSON object in the text
   const start = text.indexOf('{')
   const end = text.lastIndexOf('}')
   if (start === -1 || end === -1) return null
@@ -240,20 +263,27 @@ function extractJSON(text) {
   }
 }
 
+// ─── HANDLER ────────────────────────────────────────────────────────────────
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { financialData, language = 'es' } = req.body || {}
+  const { ticker, language = 'es' } = req.body || {}
 
-  if (!financialData) {
-    return res.status(400).json({ error: 'Missing financialData' })
+  if (!ticker) {
+    return res.status(400).json({ error: 'Missing ticker' })
   }
 
-  try {
-    const prompt = buildPrompt(financialData)
+  const symbol = ticker.toUpperCase().trim()
 
+  try {
+    // Step 1: fetch financial data from Yahoo Finance
+    const financialData = await fetchYahooData(symbol)
+
+    // Step 2: build prompt and call Claude
+    const prompt = buildPrompt(financialData)
     const messages = [{ role: 'user', content: prompt }]
     let finalResponse = null
     let iterations = 0
@@ -273,7 +303,6 @@ module.exports = async (req, res) => {
       }
 
       if (response.stop_reason === 'tool_use') {
-        // Add assistant turn and continue
         messages.push({ role: 'assistant', content: response.content })
 
         const toolResults = response.content
@@ -302,22 +331,24 @@ module.exports = async (req, res) => {
       return res.status(500).json({ error: 'No response from Claude' })
     }
 
-    // Extract all text content
     const textBlocks = finalResponse.content.filter(b => b.type === 'text')
     const fullText = textBlocks.map(b => b.text).join('\n')
-
     const analysis = extractJSON(fullText)
 
     if (!analysis) {
       return res.status(500).json({ error: 'Failed to parse analysis JSON', raw: fullText.slice(0, 500) })
     }
 
-    // Validate and clamp score
     analysis.puntuacion_total = Math.max(0, Math.min(100, Math.round(analysis.puntuacion_total)))
 
-    return res.status(200).json({ analysis })
+    // Return both financialData and analysis
+    return res.status(200).json({ financialData, analysis })
+
   } catch (err) {
     console.error('Analysis error:', err)
+    if (err.message === 'INVALID_TICKER') {
+      return res.status(404).json({ error: 'INVALID_TICKER' })
+    }
     return res.status(500).json({ error: err.message || 'Internal server error' })
   }
 }
