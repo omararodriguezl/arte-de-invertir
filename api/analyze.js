@@ -1,17 +1,25 @@
 const Anthropic = require('@anthropic-ai/sdk')
 const YahooFinance = require('yahoo-finance2').default
-const yahooFinance = new YahooFinance()
+const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] })
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 // ─── YAHOO FINANCE DATA FETCHER ────────────────────────────────────────────
 
 async function fetchYahooData(symbol) {
-  let summary
+  // Fetch summary and EPS time series in parallel
+  const fiveYearsAgo = new Date()
+  fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 6)
+  const period1 = fiveYearsAgo.toISOString().slice(0, 10)
+
+  let summary, timeSeries
   try {
-    summary = await yahooFinance.quoteSummary(symbol, {
-      modules: ['price', 'assetProfile', 'financialData', 'defaultKeyStatistics', 'incomeStatementHistory'],
-    })
+    ;[summary, timeSeries] = await Promise.all([
+      yahooFinance.quoteSummary(symbol, {
+        modules: ['price', 'assetProfile', 'financialData', 'defaultKeyStatistics'],
+      }),
+      yahooFinance.fundamentalsTimeSeries(symbol, { type: 'annual', period1 }).catch(() => []),
+    ])
   } catch (err) {
     if (err.message?.includes('No fundamentals') || err.message?.includes('Not Found') || err.message?.includes('404')) {
       throw new Error('INVALID_TICKER')
@@ -25,7 +33,6 @@ async function fetchYahooData(symbol) {
   const profile = summary.assetProfile || {}
   const financial = summary.financialData || {}
   const keyStats = summary.defaultKeyStatistics || {}
-  const incomeHistory = summary.incomeStatementHistory?.incomeStatementHistory || []
 
   const currentPrice = price.regularMarketPrice ?? 0
   const companyName = price.longName || price.shortName || symbol
@@ -42,13 +49,16 @@ async function fetchYahooData(symbol) {
   const ebitda = financial.ebitda ?? 1
   const debtToEbitda = ebitda !== 0 ? totalDebt / ebitda : 0
 
-  const eps = incomeHistory
-    .slice(0, 5)
-    .map(stmt => ({
-      year: new Date(stmt.endDate).getFullYear(),
-      value: stmt.basicEps ?? 0,
-    }))
-    .reverse()
+  // EPS from fundamentalsTimeSeries (annualBasicEPS field)
+  const eps = Array.isArray(timeSeries)
+    ? timeSeries
+        .filter(row => row.annualBasicEPS != null)
+        .slice(-5)
+        .map(row => ({
+          year: new Date(row.date).getFullYear(),
+          value: row.annualBasicEPS,
+        }))
+    : []
 
   return {
     ticker: symbol,
@@ -140,15 +150,6 @@ Mining, oil & gas, banking, insurance, transportation (airlines/maritime/truckin
 ## STEP 6 — MANAGEMENT QUALITY (Estebaranz Chapters 5 & 8)
 POSITIVE signals: Management owns significant shares (skin in the game), base salary moderate/symbolic, aggressive buybacks when stock is cheap, track record of good decisions
 NEGATIVE signals: High CEO turnover, growth promises without results, systematic shareholder dilution, very high salaries uncorrelated with results
-
-═══════════════════════════════════════════
-RESEARCH INSTRUCTIONS
-═══════════════════════════════════════════
-Use the web_search tool to find:
-1. What competitive moats does ${companyName} have? (search: "${companyName} competitive advantage moat 2024 2025")
-2. Management ownership and shareholder alignment (search: "${companyName} CEO ownership shares buyback 2024")
-3. Recent EPS/earnings trajectory and analyst outlook (search: "${companyName} EPS earnings growth forecast 2025")
-4. Any major risks or recent strategic changes (search: "${companyName} risks challenges 2025")
 
 ═══════════════════════════════════════════
 SCORING RUBRIC (total: 100 pts)
@@ -268,54 +269,13 @@ module.exports = async (req, res) => {
 
     // Step 2: build prompt and call Claude
     const prompt = buildPrompt(financialData)
-    const messages = [{ role: 'user', content: prompt }]
-    let finalResponse = null
-    let iterations = 0
-    const maxIterations = 6
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4096,
+      messages: [{ role: 'user', content: prompt }],
+    })
 
-    while (iterations < maxIterations) {
-      const response = await client.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 4096,
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-        messages,
-      })
-
-      if (response.stop_reason === 'end_turn') {
-        finalResponse = response
-        break
-      }
-
-      if (response.stop_reason === 'tool_use') {
-        messages.push({ role: 'assistant', content: response.content })
-
-        const toolResults = response.content
-          .filter(block => block.type === 'tool_use')
-          .map(block => ({
-            type: 'tool_result',
-            tool_use_id: block.id,
-            content: 'Search completed.',
-          }))
-
-        if (toolResults.length > 0) {
-          messages.push({ role: 'user', content: toolResults })
-        } else {
-          finalResponse = response
-          break
-        }
-      } else {
-        finalResponse = response
-        break
-      }
-
-      iterations++
-    }
-
-    if (!finalResponse) {
-      return res.status(500).json({ error: 'No response from Claude' })
-    }
-
-    const textBlocks = finalResponse.content.filter(b => b.type === 'text')
+    const textBlocks = response.content.filter(b => b.type === 'text')
     const fullText = textBlocks.map(b => b.text).join('\n')
     const analysis = extractJSON(fullText)
 
