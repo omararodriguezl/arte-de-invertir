@@ -8,14 +8,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-i18next": "^14.1.0",
+    "@anthropic-ai/sdk": "^0.39.0",
+    "html2canvas": "^1.4.1",
     "i18next": "^23.10.0",
     "jspdf": "^2.5.1",
     "jspdf-autotable": "^3.8.2",
-    "html2canvas": "^1.4.1",
-    "@anthropic-ai/sdk": "^0.39.0"
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-i18next": "^14.1.0",
+    "yahoo-finance2": "^3.14.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.1",

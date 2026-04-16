@@ -1,68 +1,51 @@
 const Anthropic = require('@anthropic-ai/sdk')
+const yahooFinance = require('yahoo-finance2').default
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 // ─── YAHOO FINANCE DATA FETCHER ────────────────────────────────────────────
 
 async function fetchYahooData(symbol) {
-  const modules = [
-    'price',
-    'assetProfile',
-    'financialData',
-    'defaultKeyStatistics',
-    'incomeStatementHistory',
-  ].join(',')
-
-  const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${symbol}?modules=${modules}`
-
-  const res = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Accept': 'application/json',
-      'Accept-Language': 'en-US,en;q=0.9',
-    },
-  })
-
-  if (!res.ok) {
-    if (res.status === 404) throw new Error('INVALID_TICKER')
-    throw new Error(`Yahoo error ${res.status}`)
+  let summary
+  try {
+    summary = await yahooFinance.quoteSummary(symbol, {
+      modules: ['price', 'assetProfile', 'financialData', 'defaultKeyStatistics', 'incomeStatementHistory'],
+    })
+  } catch (err) {
+    if (err.message?.includes('No fundamentals') || err.message?.includes('Not Found') || err.message?.includes('404')) {
+      throw new Error('INVALID_TICKER')
+    }
+    throw err
   }
 
-  const json = await res.json()
+  if (!summary) throw new Error('INVALID_TICKER')
 
-  if (json.quoteSummary?.error) {
-    throw new Error('INVALID_TICKER')
-  }
+  const price = summary.price || {}
+  const profile = summary.assetProfile || {}
+  const financial = summary.financialData || {}
+  const keyStats = summary.defaultKeyStatistics || {}
+  const incomeHistory = summary.incomeStatementHistory?.incomeStatementHistory || []
 
-  const result = json.quoteSummary?.result?.[0]
-  if (!result) throw new Error('INVALID_TICKER')
-
-  const price = result.price || {}
-  const profile = result.assetProfile || {}
-  const financial = result.financialData || {}
-  const keyStats = result.defaultKeyStatistics || {}
-  const incomeHistory = result.incomeStatementHistory?.incomeStatementHistory || []
-
-  const currentPrice = price.regularMarketPrice?.raw ?? 0
+  const currentPrice = price.regularMarketPrice ?? 0
   const companyName = price.longName || price.shortName || symbol
   const sector = profile.sector || 'N/A'
-  const per = price.trailingPE?.raw ?? 0
-  const roe = (financial.returnOnEquity?.raw ?? 0) * 100
-  const netMargin = (financial.profitMargins?.raw ?? 0) * 100
+  const per = price.trailingPE ?? 0
+  const roe = (financial.returnOnEquity ?? 0) * 100
+  const netMargin = (financial.profitMargins ?? 0) * 100
 
-  const sharesOutstanding = keyStats.sharesOutstanding?.raw ?? 1
-  const freeCashFlowTotal = financial.freeCashflow?.raw ?? 0
+  const sharesOutstanding = keyStats.sharesOutstanding ?? 1
+  const freeCashFlowTotal = financial.freeCashflow ?? 0
   const freeCashFlow = freeCashFlowTotal / sharesOutstanding
 
-  const totalDebt = financial.totalDebt?.raw ?? 0
-  const ebitda = financial.ebitda?.raw ?? 1
+  const totalDebt = financial.totalDebt ?? 0
+  const ebitda = financial.ebitda ?? 1
   const debtToEbitda = ebitda !== 0 ? totalDebt / ebitda : 0
 
   const eps = incomeHistory
     .slice(0, 5)
     .map(stmt => ({
-      year: new Date(stmt.endDate?.fmt || stmt.endDate?.raw * 1000).getFullYear(),
-      value: stmt.basicEps?.raw ?? 0,
+      year: new Date(stmt.endDate).getFullYear(),
+      value: stmt.basicEps ?? 0,
     }))
     .reverse()
 
