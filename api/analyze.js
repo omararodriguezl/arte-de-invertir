@@ -7,18 +7,21 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 // ─── YAHOO FINANCE DATA FETCHER ────────────────────────────────────────────
 
 async function fetchYahooData(symbol) {
-  // Fetch summary and EPS time series in parallel
-  const fiveYearsAgo = new Date()
-  fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 6)
-  const period1 = fiveYearsAgo.toISOString().slice(0, 10)
+  const period1 = new Date()
+  period1.setFullYear(period1.getFullYear() - 6)
+  const period1Str = period1.toISOString().slice(0, 10)
 
   let summary, timeSeries
   try {
     ;[summary, timeSeries] = await Promise.all([
       yahooFinance.quoteSummary(symbol, {
-        modules: ['price', 'assetProfile', 'financialData', 'defaultKeyStatistics'],
+        modules: ['price', 'assetProfile', 'financialData', 'defaultKeyStatistics', 'summaryDetail'],
       }),
-      yahooFinance.fundamentalsTimeSeries(symbol, { type: 'annual', period1 }).catch(() => []),
+      yahooFinance.fundamentalsTimeSeries(symbol, {
+        module: 'financials',
+        type: 'annual',
+        period1: period1Str,
+      }).catch(() => []),
     ])
   } catch (err) {
     if (err.message?.includes('No fundamentals') || err.message?.includes('Not Found') || err.message?.includes('404')) {
@@ -33,30 +36,31 @@ async function fetchYahooData(symbol) {
   const profile = summary.assetProfile || {}
   const financial = summary.financialData || {}
   const keyStats = summary.defaultKeyStatistics || {}
+  const detail = summary.summaryDetail || {}
 
   const currentPrice = price.regularMarketPrice ?? 0
   const companyName = price.longName || price.shortName || symbol
   const sector = profile.sector || 'N/A'
-  const per = price.trailingPE ?? 0
+  const per = detail.trailingPE ?? price.trailingPE ?? 0
   const roe = (financial.returnOnEquity ?? 0) * 100
   const netMargin = (financial.profitMargins ?? 0) * 100
 
   const sharesOutstanding = keyStats.sharesOutstanding ?? 1
   const freeCashFlowTotal = financial.freeCashflow ?? 0
-  const freeCashFlow = freeCashFlowTotal / sharesOutstanding
+  const freeCashFlow = sharesOutstanding > 0 ? freeCashFlowTotal / sharesOutstanding : 0
 
   const totalDebt = financial.totalDebt ?? 0
-  const ebitda = financial.ebitda ?? 1
+  const ebitda = financial.ebitda ?? 0
   const debtToEbitda = ebitda !== 0 ? totalDebt / ebitda : 0
 
-  // EPS from fundamentalsTimeSeries (annualBasicEPS field)
+  // EPS from fundamentalsTimeSeries — field is basicEPS (not annualBasicEPS)
   const eps = Array.isArray(timeSeries)
     ? timeSeries
-        .filter(row => row.annualBasicEPS != null)
+        .filter(row => row.basicEPS != null)
         .slice(-5)
         .map(row => ({
           year: new Date(row.date).getFullYear(),
-          value: row.annualBasicEPS,
+          value: row.basicEPS,
         }))
     : []
 
