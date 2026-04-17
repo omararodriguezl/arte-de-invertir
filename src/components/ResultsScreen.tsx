@@ -5,6 +5,7 @@ import CircularGauge from './CircularGauge'
 import RecommendationBadge from './RecommendationBadge'
 import CriteriaCard from './CriteriaCard'
 import EPSChart from './EPSChart'
+import ChatPanel from './ChatPanel'
 import { generatePDF } from '../utils/pdf'
 
 interface Props {
@@ -60,6 +61,7 @@ function StockTypeBadge({ tipo, lang }: { tipo: StockType; lang: string }) {
 export default function ResultsScreen({ financialData, analysis, onBack, onToggleLang }: Props) {
   const { t, i18n } = useTranslation()
   const [downloading, setDownloading] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
   const lang = i18n.language === 'en' ? 'en' : 'es'
 
   const rec = analysis.recomendacion_en
@@ -216,8 +218,28 @@ export default function ResultsScreen({ financialData, analysis, onBack, onToggl
           </p>
         </section>
 
-        {/* Download PDF */}
-        <section className="animate-slide-up pb-8" style={{ animationDelay: '0.35s' }}>
+        {/* Actions */}
+        <section className="animate-slide-up pb-8 space-y-3" style={{ animationDelay: '0.35s' }}>
+          {/* AI Chat button */}
+          <button
+            onClick={() => setChatOpen(true)}
+            className="w-full rounded-xl flex items-center justify-center gap-3 font-display font-semibold text-sm transition-all duration-200 hover:opacity-90 active:scale-[0.98]"
+            style={{
+              padding: '18px 24px',
+              minHeight: '60px',
+              background: 'rgba(201,168,76,0.08)',
+              border: '1px solid rgba(201,168,76,0.35)',
+              color: '#C9A84C',
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+              <path d="M2 4a2 2 0 012-2h10a2 2 0 012 2v7a2 2 0 01-2 2H6l-4 3V4z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M6 7h6M6 10h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            </svg>
+            {lang === 'es' ? 'Consultar IA sobre este análisis' : 'Ask AI about this analysis'}
+          </button>
+
+          {/* Download PDF */}
           <button
             onClick={handleDownload}
             disabled={downloading}
@@ -239,11 +261,18 @@ export default function ResultsScreen({ financialData, analysis, onBack, onToggl
             )}
           </button>
 
-          <p className="text-[11px] text-[#3A4558] font-body text-center mt-4">
+          <p className="text-[11px] text-[#3A4558] font-body text-center mt-2">
             {t('home.disclaimer')}
           </p>
         </section>
       </main>
+
+      <ChatPanel
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        financialData={financialData}
+        analysis={analysis}
+      />
     </div>
   )
 }
